@@ -51,5 +51,7 @@ def register_exception_handler(app: FastAPI) -> None:
     :param app: FastAPI 应用实例
     :return: None
     """
+    logger.info("正在注册全局异常处理器...")
     app.add_exception_handler(BusinessException, business_exception_handler)
     app.add_exception_handler(Exception, global_exception_handler)
+    logger.info("全局异常处理器注册完成")

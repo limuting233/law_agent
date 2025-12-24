@@ -23,12 +23,18 @@ class Settings(BaseSettings):
     POSTGRESQL_PASSWORD: str
     POSTGRESQL_HOST: str
     POSTGRESQL_PORT: int
+    POSTGRESQL_POOL_SIZE: int
+    POSTGRESQL_MAX_OVERFLOW: int
 
     # Redis 配置
     REDIS_HOST: str
     REDIS_PORT: int
     REDIS_PASSWORD: str
     REDIS_DB: int
+    REDIS_SOCKET_TIMEOUT: int
+    REDIS_SOCKET_CONNECT_TIMEOUT: int
+    REDIS_POOL_MAX_CONNECTIONS: int
+    REDIS_POOL_HEALTH_CHECK: int
 
     # 日志
     LOG_LEVEL: str = "INFO"
