@@ -42,9 +42,7 @@ def create_app() -> FastAPI:
     register_exception_handler(app)
     # logger.info("全局异常处理器注册完成")
 
-    # # 初始化 Redis 连接池
-    # get_redis_client()
-    # logger.info("Redis 连接池初始化完成")
+
 
     logger.info("正在注册 API V1 路由...")
     app.include_router(api_router, prefix="/api/v1")

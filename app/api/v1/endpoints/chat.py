@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api import deps
@@ -15,7 +16,7 @@ chat_service = ChatService()
 
 
 @router.post("/stream")
-async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(deps.get_db)):
+async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(deps.get_db), redis: Redis = Depends(deps.get_redis)):
     """
     流式聊天接口
     :param request: 聊天请求模型
@@ -24,6 +25,6 @@ async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(deps.get_
     """
 
     return StreamingResponse(
-        content=sse_generator(chat_service.chat_stream(request)),
+        content=sse_generator(chat_service.chat_stream(request, db, redis)),
         media_type="text/event-stream"
     )

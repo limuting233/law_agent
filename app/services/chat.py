@@ -2,6 +2,8 @@ import asyncio
 import time
 
 from langchain_core.messages import AIMessageChunk, ToolMessage
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.executor import law_agent
 from core.status_code import AppStatus
@@ -16,8 +18,8 @@ class ChatService:
     聊天服务类，用于处理用户聊天相关操作
     """
 
-    async def chat_stream(self, request: ChatRequest):
-        chat_id = request.chat_id  # 获取聊天会话ID
+    async def chat_stream(self, request: ChatRequest, db: AsyncSession, redis: Redis):
+        session_id = request.session_id  # 获取聊天会话ID
         message = request.message  # 获取用户消息
 
         content = message.content.strip()  # 提取文本消息并去除首尾空格
@@ -28,7 +30,7 @@ class ChatService:
                 event="workflow_start",
                 data=None,
                 meta=WorkflowStartMeta(
-                    chat_id=chat_id,
+                    session_id=session_id,
                     timestamp=int(time.time() * 1000),
                 )
             )
@@ -45,7 +47,7 @@ class ChatService:
                 # ('messages', (AIMessageChunk(content='你好', additional_kwargs={}, response_metadata={'model_provider': 'openai'}, id='lc_run--019b4ec7-f94f-7af2-896d-a4e288eecee1'), {'langgraph_step': 1, 'langgraph_node': 'model', 'langgraph_triggers': ('branch:to:model',), 'langgraph_path': ('__pregel_pull', 'model'), 'langgraph_checkpoint_ns': 'model:5610268a-3758-f49d-4cbd-442e465add7d', 'checkpoint_ns': 'model:5610268a-3758-f49d-4cbd-442e465add7d', 'ls_provider': 'openai', 'ls_model_name': 'gpt-4.1-mini', 'ls_model_type': 'chat', 'ls_temperature': None}))
                 # ...
                 # ('updates', {'model': {'messages': [AIMessage(content='你好！有什么我可以帮你的吗？', additional_kwargs={}, response_metadata={'finish_reason': 'stop', 'model_name': 'gpt-4.1-mini-2025-04-14', 'system_fingerprint': 'fp_3dcd5944f5', 'model_provider': 'openai'}, id='lc_run--019b4ec7-f94f-7af2-896d-a4e288eecee1', usage_metadata={'input_tokens': 8, 'output_tokens': 10, 'total_tokens': 18, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}})
-                
+
                 # print(mode)
                 # print(chunk)
 
@@ -57,7 +59,7 @@ class ChatService:
                             event="text_chunk",
                             data=msg_chunk.content,
                             meta=TextChunkMeta(
-                                chat_id=chat_id,
+                                session_id=session_id,
                                 timestamp=int(time.time() * 1000),
                                 # trace_id=msg_chunk.id,
                                 index=chunk_index,
@@ -71,7 +73,7 @@ class ChatService:
                             event="tool_use",
                             data=msg_chunk.content,
                             meta=ToolUseMeta(
-                                chat_id=chat_id,
+                                session_id=session_id,
                                 timestamp=int(time.time() * 1000),
                                 tool_name=msg_chunk.name
                             )
@@ -84,7 +86,7 @@ class ChatService:
                 event="done",
                 data=None,
                 meta=DoneMeta(
-                    chat_id=chat_id,
+                    session_id=session_id,
                     timestamp=int(time.time() * 1000),
                 )
             )
@@ -98,7 +100,7 @@ class ChatService:
                 event="error",
                 data=None,
                 meta=ErrorMeta(
-                    chat_id=chat_id,
+                    session_id=session_id,
                     trace_id=None,
                     timestamp=int(time.time() * 1000),
                     code=AppStatus.agent_error.code,

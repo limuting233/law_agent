@@ -7,7 +7,7 @@ class BaseMeta(BaseModel):
     """
     流式响应元数据基类
     """
-    chat_id: str = Field(..., description="聊天会话ID")
+    session_id: str = Field(..., description="聊天会话ID")
     # trace_id: Optional[str] = Field(..., description="langchain跟踪ID")
     timestamp: int = Field(..., description="事件发生时间戳（毫秒级）")
 
