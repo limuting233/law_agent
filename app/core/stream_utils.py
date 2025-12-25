@@ -19,14 +19,17 @@ async def sse_generator(generator: AsyncGenerator[BaseModel | dict | str, None])
             # payload = ""
             if isinstance(chunk, BaseModel):
                 # model_dump_json() 比 json.dumps(model.dict()) 性能更好
-                payload = chunk.model_dump_json()
-            elif isinstance(chunk, dict):
-                payload = json.dumps(chunk, check_circular=False)
+                # payload = chunk.model_dump_json()
+                event = chunk.event
+                data = chunk.data
 
-            else:
-                payload = json.dumps({"data": chunk}, check_circular=False)
+            # elif isinstance(chunk, dict):
+            #     payload = json.dumps(chunk, check_circular=False)
+            #
+            # else:
+            #     payload = json.dumps({"data": chunk}, check_circular=False)
 
-            yield f"{payload}\n\n"
+            yield f"event: {event}\ndata: {data.model_dump_json()}\n\n"
     except Exception as e:
         logger.error(f"[sse_generator] 异常: {str(e)}")
         # payload = json.dumps({"error": str(e)}, check_circular=False)

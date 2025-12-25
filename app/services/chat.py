@@ -1,16 +1,20 @@
 import asyncio
+import json
 import time
+import uuid
 
-from langchain_core.messages import AIMessageChunk, ToolMessage
+from langchain_core.messages import AIMessageChunk, ToolMessage, SystemMessage, HumanMessage, AIMessage
 from redis.asyncio import Redis
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.executor import law_agent
+from agent import executor
 from core.status_code import AppStatus
+from models.chat import ChatSession, ChatMessage
 from schemas.request.chat import ChatRequest, Message
 from loguru import logger
 
-from schemas.response.stream import StreamResponse, TextChunkMeta, ErrorMeta, ToolUseMeta, WorkflowStartMeta, DoneMeta
+from schemas.response.stream import StreamResponse, StartEvent, MessageEvent
 
 
 class ChatService:
@@ -18,95 +22,134 @@ class ChatService:
     聊天服务类，用于处理用户聊天相关操作
     """
 
-    async def chat_stream(self, request: ChatRequest, db: AsyncSession, redis: Redis):
+    async def chat_stream(self, request: ChatRequest, db: AsyncSession, redis_client: Redis):
         session_id = request.session_id  # 获取聊天会话ID
+
         message = request.message  # 获取用户消息
 
         content = message.content.strip()  # 提取文本消息并去除首尾空格
 
         try:
+            try:
+                if not session_id:
+                    # 没有会话ID，需要创建一个新的会话ID，代表这是用户首次开启这个会话
+                    new_session_id = str(uuid.uuid4())
+                    # 在postgres数据库中创建一个新的会话记录
+                    new_session = ChatSession(
+                        id=new_session_id,
+                        user_id="user_1",
+                        title=content[0:10] if len(content) > 10 else content,
+                        is_deleted=False,
+                        created_at=int(time.time() * 1000),
+                        updated_at=int(time.time() * 1000),
+                    )
+                    db.add(new_session)
+                    await db.commit()
+                    # session_id = new_session_id
+            except Exception as e:
+                raise Exception(f"创建新会话失败,{str(e)}")
 
-            yield StreamResponse(
-                event="workflow_start",
-                data=None,
-                meta=WorkflowStartMeta(
-                    session_id=session_id,
-                    timestamp=int(time.time() * 1000),
+            try:
+                history_messages = []
+                if session_id:
+                    # 从redis中查询历史聊天记录
+                    history = await redis_client.lrange(f"chat_history:{session_id}", 0, -1)
+                    logger.info(f"从redis中查询会话{session_id}的历史聊天记录，共{len(history)}条")
+                    if history:
+                        # redis中存在历史记录
+
+                        # 解析历史聊天记录
+                        for msg in history:
+                            msg = json.loads(msg)
+                            if msg["type"] == "system":
+                                history_messages.append(SystemMessage(**msg))
+                            elif msg["type"] == "human":
+                                history_messages.append(HumanMessage(**msg))
+                            elif msg["type"] == "ai":
+                                history_messages.append(AIMessage(**msg))
+                    else:
+                        # 无历史记录时，需要去postgres数据库里查询该会话的所有聊天记录，
+                        # result = await db.execute(
+                        #     select(func.count(ChatMessage.id)).where(ChatMessage.session_id == session_id))
+                        # message_count = result.scalar()
+                        # logger.info(f"从postgres数据库中查询会话{session_id}的聊天记录，共{message_count}条")
+                        # 用户时隔很久没有与智能体交互，现在又开始与智能体交互，需要重新初始化历史记录
+                        # 查询postgres数据库中该会话的所有聊天记录
+                        result = await db.execute(select(ChatMessage).where(ChatMessage.session_id == session_id))
+                        db_messages = result.scalars().all()
+                        # 拿到所有的聊天记录，然后把他们放在redis中
+                        redis_messages = []
+                        for msg in db_messages:
+                            redis_messages.append(json.dumps(msg.raw_data, ensure_ascii=False))
+                            if msg.type == "system":
+                                history_messages.append(SystemMessage(**msg.raw_data))
+                            elif msg.type == "human":
+                                history_messages.append(HumanMessage(**msg.raw_data))
+                            elif msg.type == "ai":
+                                history_messages.append(AIMessage(**msg.raw_data))
+                        # 把所有的聊天记录写入redis
+                        # await redis_client.rpush(f"chat_history:{session_id}", *redis_messages)
+                        async with redis_client.pipeline() as pipe:
+                            pipe.rpush(f"chat_history:{session_id}", *redis_messages)  # 把所有的聊天记录写入redis
+                            pipe.expire(f"chat_history:{session_id}", 24 * 60 * 60)  # 设置过期时间为24小时
+                            await pipe.execute()
+
+
+            except Exception as e:
+                raise Exception(f"查询会话{session_id}的历史聊天记录失败，{str(e)}")
+
+            try:
+                if not session_id:
+                    session_id = new_session_id
+                yield StreamResponse(
+                    event="start",
+                    data=StartEvent(
+                        session_id=session_id,
+                        start_at=int(time.time() * 1000),
+                    )
                 )
-            )
 
-            # 初始化计数器，用于前端流式排序
-            chunk_index = 0
+                # # 初始化计数器，用于前端流式排序
+                # chunk_index = 0
 
-            # 调用agent生成回复
-            async for mode, chunk in law_agent.astream(
-                    input={"messages": [{"role": "user", "content": content}]},
-                    stream_mode=["messages", "updates"]
-            ):
-                # mode,chunk 示例:
-                # ('messages', (AIMessageChunk(content='你好', additional_kwargs={}, response_metadata={'model_provider': 'openai'}, id='lc_run--019b4ec7-f94f-7af2-896d-a4e288eecee1'), {'langgraph_step': 1, 'langgraph_node': 'model', 'langgraph_triggers': ('branch:to:model',), 'langgraph_path': ('__pregel_pull', 'model'), 'langgraph_checkpoint_ns': 'model:5610268a-3758-f49d-4cbd-442e465add7d', 'checkpoint_ns': 'model:5610268a-3758-f49d-4cbd-442e465add7d', 'ls_provider': 'openai', 'ls_model_name': 'gpt-4.1-mini', 'ls_model_type': 'chat', 'ls_temperature': None}))
-                # ...
-                # ('updates', {'model': {'messages': [AIMessage(content='你好！有什么我可以帮你的吗？', additional_kwargs={}, response_metadata={'finish_reason': 'stop', 'model_name': 'gpt-4.1-mini-2025-04-14', 'system_fingerprint': 'fp_3dcd5944f5', 'model_provider': 'openai'}, id='lc_run--019b4ec7-f94f-7af2-896d-a4e288eecee1', usage_metadata={'input_tokens': 8, 'output_tokens': 10, 'total_tokens': 18, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}})
+                config = {"configurable": {"thread_id": session_id}}
 
-                # print(mode)
-                # print(chunk)
-
-                if mode == "messages":
-                    msg_chunk, meta_info = chunk  # 解包消息块和元信息
-                    if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
-                        chunk_index += 1
-                        yield StreamResponse(
-                            event="text_chunk",
-                            data=msg_chunk.content,
-                            meta=TextChunkMeta(
-                                session_id=session_id,
-                                timestamp=int(time.time() * 1000),
-                                # trace_id=msg_chunk.id,
-                                index=chunk_index,
-                                # node=meta_info["langgraph_node"],
-                                # model=meta_info["ls_model_name"],
-
+                async for mode, chunk in executor.law_agent.astream(
+                        input={
+                            "messages": [HumanMessage(content=content)],
+                            "user_id": "user_1",
+                        },
+                        stream_mode=["messages", "updates"],
+                        config=config,
+                ):
+                    # logger.debug(f"mode: {mode}, chunk: {chunk}")
+                    if mode == "messages":
+                        # 处理messages模式下的chunk
+                        msg_chunk, meta_info = chunk
+                        if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
+                            # chunk_index += 1
+                            yield StreamResponse(
+                                event="message",
+                                data=MessageEvent(
+                                    content=msg_chunk.content
+                                )
                             )
-                        )
-                    elif isinstance(msg_chunk, ToolMessage) and msg_chunk.content:
-                        yield StreamResponse(
-                            event="tool_use",
-                            data=msg_chunk.content,
-                            meta=ToolUseMeta(
-                                session_id=session_id,
-                                timestamp=int(time.time() * 1000),
-                                tool_name=msg_chunk.name
-                            )
-                        )
+                            # pass
 
-                elif mode == "updates":
-                    pass
+                    elif mode == "updates":
+                        # 处理updates模式下的chunk
 
-            yield StreamResponse(
-                event="done",
-                data=None,
-                meta=DoneMeta(
-                    session_id=session_id,
-                    timestamp=int(time.time() * 1000),
-                )
-            )
+                        pass
 
-
+                state = await executor.law_agent.aget_state(config)
+                print(state.values["messages"])
+            except Exception as e:
+                # logger.exception(f"law_agent流式调用异常, {str(e)}")
+                raise Exception(f"law_agent流式调用异常, {str(e)}")
 
 
         except Exception as e:
-            logger.error(f"law_agent流式调用异常: {str(e)}")
-            yield StreamResponse(
-                event="error",
-                data=None,
-                meta=ErrorMeta(
-                    session_id=session_id,
-                    trace_id=None,
-                    timestamp=int(time.time() * 1000),
-                    code=AppStatus.agent_error.code,
-                    error_message=AppStatus.agent_error.error_message,
-                )
-            )
+            logger.error(f"LawAgent运行异常: {str(e)}")
 
 #
 # if __name__ == '__main__':

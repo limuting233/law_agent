@@ -16,15 +16,16 @@ chat_service = ChatService()
 
 
 @router.post("/stream")
-async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(deps.get_db), redis: Redis = Depends(deps.get_redis)):
+async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(deps.get_db), redis_client: Redis = Depends(deps.get_redis)):
     """
     流式聊天接口
     :param request: 聊天请求模型
     :param db: 异步数据库会话, 依赖注入
+    :param redis_client: Redis 客户端, 依赖注入
     :return: 流式响应
     """
 
     return StreamingResponse(
-        content=sse_generator(chat_service.chat_stream(request, db, redis)),
+        content=sse_generator(chat_service.chat_stream(request, db, redis_client)),
         media_type="text/event-stream"
     )

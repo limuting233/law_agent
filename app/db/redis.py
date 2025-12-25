@@ -4,7 +4,7 @@ from redis.asyncio import Redis,from_url
 
 from core.config import settings
 
-redis_url = f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
 
 
 class RedisManager:

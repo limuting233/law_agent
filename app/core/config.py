@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Redis 配置
     REDIS_HOST: str
     REDIS_PORT: int
-    REDIS_PASSWORD: str
+    # REDIS_PASSWORD: str
     REDIS_DB: int
     REDIS_SOCKET_TIMEOUT: int
     REDIS_SOCKET_CONNECT_TIMEOUT: int

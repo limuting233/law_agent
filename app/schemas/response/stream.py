@@ -3,59 +3,66 @@ from typing import Literal, Any, Optional, Union
 from pydantic import BaseModel, Field
 
 
-class BaseMeta(BaseModel):
+# event的类型有：start，step（展示 Agent 的思考过程/步骤）、message（流式传输 AI 的回答文本）、citation（传输引用来源 (法律依据)）、error（发生错误）、done（结束信号）
+
+
+class StartEvent(BaseModel):
     """
-    流式响应元数据基类
+    工作流开始事件数据
     """
     session_id: str = Field(..., description="聊天会话ID")
-    # trace_id: Optional[str] = Field(..., description="langchain跟踪ID")
-    timestamp: int = Field(..., description="事件发生时间戳（毫秒级）")
-
-class WorkflowStartMeta(BaseMeta):
-    """
-    工作流开始事件元数据
-    """
+    start_at: int = Field(..., description="本次对话开始时间,毫秒时间戳")
 
 
-class TextChunkMeta(BaseMeta):
+class StepEvent(BaseModel):
     """
-    文本块元数据
+    工作流步骤事件数据
     """
-    index: int = Field(..., description="文本块索引")
-    # node: str = Field(..., description="当前处理节点")
-    # model: str = Field(..., description="当前使用的模型")
+    step: str = Field(..., description="当前的步骤")
+    status: str = Field(..., description="当前步骤的状态")
+    description: str = Field(..., description="当前步骤的描述")
 
 
-class ToolUseMeta(BaseMeta):
+class MessageEvent(BaseModel):
     """
-    工具调用元数据
+    消息事件数据
     """
-    # tool_id: str = Field(..., description="工具ID")
-    # tool_call_id: str = Field(..., description="工具调用ID")
-    tool_name: str = Field(..., description="工具名称")
-    # tool_content: str = Field(..., description="工具的返回内容")
-    # node: str = Field(..., description="当前处理节点")
+    content: str = Field(..., description="消息内容")
 
 
-class DoneMeta(BaseMeta):
+class CitationEvent(BaseModel):
     """
-    完成事件元数据
+    引用事件数据
     """
+    source: str = Field(..., description="引用来源")
+    page: Optional[int] = Field(default=None, description="引用来源的页码")
+    content: str = Field(..., description="具体引用内容")
 
 
-class ErrorMeta(BaseMeta):
+class ErrorEvent(BaseModel):
     """
-    错误事件元数据
+    错误事件数据
     """
     code: int = Field(..., description="错误码")
     error_message: str = Field(..., description="错误信息")
+
+
+class DoneEvent(BaseModel):
+    """
+    完成事件数据
+    """
+    usage: dict = Field(..., description="使用统计信息")
+    session_id: str = Field(..., description="聊天会话ID")
+    end_at: int = Field(..., description="本次对话结束时间,毫秒时间戳")
 
 
 class StreamResponse(BaseModel):
     """
     流式响应模型
     """
-    event: Literal["workflow_start", "reasoning", "tool_use", "citation", "text_chunk", "error", "done"] = Field(...,
-                                                                                                                 description="事件类型")
-    data: Any = Field(..., description="事件数据")
-    meta: Union[WorkflowStartMeta, TextChunkMeta, ToolUseMeta, DoneMeta, ErrorMeta] = Field(default=None, description="事件元数据")
+    event: Literal["start", "step", "message", "citation", "error", "done"] = Field(...,
+                                                                                    description="事件类型")
+    data: Union[StartEvent, StepEvent, MessageEvent, CitationEvent, ErrorEvent, DoneEvent] = Field(...,
+                                                                                                   description="事件数据")
+    # meta: Union[WorkflowStartMeta, TextChunkMeta, ToolUseMeta, DoneMeta, ErrorMeta] = Field(default=None,
+    #                                                                                         description="事件元数据")
