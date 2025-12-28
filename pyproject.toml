@@ -1,7 +1,7 @@
 [project]
-name = "law-rag-agent"
+name = "agent_server"
 version = "0.1.0"
-description = ""
+description = "law agent的agent模块的服务端应用"
 authors = [
     {name = "limuting",email = "limuting233@gmail.com"}
 ]
