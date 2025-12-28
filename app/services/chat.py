@@ -14,7 +14,7 @@ from models.chat import ChatSession, ChatMessage
 from schemas.request.chat import ChatRequest, Message
 from loguru import logger
 
-from schemas.response.stream import StreamResponse, StartEvent, MessageEvent
+from schemas.response.stream import StreamResponse, StartEvent, MessageEvent, DoneEvent
 
 
 class ChatService:
@@ -33,7 +33,8 @@ class ChatService:
             try:
                 if not session_id:
                     # 没有会话ID，需要创建一个新的会话ID，代表这是用户首次开启这个会话
-                    new_session_id = str(uuid.uuid4())
+                    new_session_id = str(uuid.uuid4()).replace("-", "_")
+                    new_session_id = new_session_id
                     # 在postgres数据库中创建一个新的会话记录
                     new_session = ChatSession(
                         id=new_session_id,
@@ -101,6 +102,22 @@ class ChatService:
             try:
                 if not session_id:
                     session_id = new_session_id
+
+                # 将本次用户的消息存储进postgres和redis
+                human_message = HumanMessage(content=content)
+
+                # # 存储进postgres
+                # chat_message = ChatMessage(
+                #     id=str(uuid.uuid4()).replace("-", "_"),
+                #     session_id=session_id,
+                #     type="human",
+                #     content=content,
+                #     raw_data=human_message.__dict__,
+                #     created_at=int(time.time() * 1000),
+                # )
+                # db.add(chat_message)
+                # await db.commit()
+
                 yield StreamResponse(
                     event="start",
                     data=StartEvent(
@@ -112,11 +129,15 @@ class ChatService:
                 # # 初始化计数器，用于前端流式排序
                 # chunk_index = 0
 
-                config = {"configurable": {"thread_id": session_id}}
+                # 随机生成本次请求的thread_id
+                thread_id = "thread_" + str(uuid.uuid4()).replace("-", "_")
+                logger.info(f"本次请求生成thread_id: {thread_id}")
+
+                config = {"configurable": {"thread_id": thread_id}}
 
                 async for mode, chunk in executor.law_agent.astream(
                         input={
-                            "messages": [HumanMessage(content=content)],
+                            "messages": history_messages + [HumanMessage(content=content)],
                             "user_id": "user_1",
                         },
                         stream_mode=["messages", "updates"],
@@ -136,16 +157,89 @@ class ChatService:
                             )
                             # pass
 
-                    elif mode == "updates":
-                        # 处理updates模式下的chunk
+                    # elif mode == "updates":
+                    #     # 处理updates模式下的chunk
+                    #     # 存储聊天记录进postgres
+                    #     logger.info(f"updates模式下的chunk: {chunk}")
+                    #     if "model" in chunk:
+                    #         message = chunk["model"]["messages"][0]
+                    #         if isinstance(message, AIMessage) and message.content:
+                    #             # 存储聊天进Postgres
+                    #             chat_message = ChatMessage(
+                    #                 id=str(uuid.uuid4()).replace("-", "_"),
+                    #                 session_id=session_id,
+                    #                 type="ai",
+                    #                 content=message.content,
+                    #                 raw_data=message.__dict__,
+                    #                 created_at=int(time.time() * 1000),
+                    #
+                    #             )
+                    #             db.add(chat_message)
+                    # await db.commit()
 
-                        pass
 
-                state = await executor.law_agent.aget_state(config)
-                print(state.values["messages"])
+
+
+
+
+
+
+
+
+
             except Exception as e:
                 # logger.exception(f"law_agent流式调用异常, {str(e)}")
                 raise Exception(f"law_agent流式调用异常, {str(e)}")
+
+            try:
+                state = await executor.law_agent.aget_state(config)
+                last_message = state.values["messages"][-1]
+                if isinstance(last_message, AIMessage) and last_message.content:
+                    # 存储进postgres
+                    chat_human_msg = ChatMessage(
+                        id=str(uuid.uuid4()).replace("-", "_"),
+                        session_id=session_id,
+                        type="human",
+                        content=content,
+                        raw_data=human_message.__dict__,
+                        created_at=int(time.time() * 1000),
+                    )
+                    chat_ai_msg = ChatMessage(
+                        id=str(uuid.uuid4()).replace("-", "_"),
+                        session_id=session_id,
+                        type="ai",
+                        content=last_message.content,
+                        raw_data=last_message.__dict__,
+                        created_at=int(time.time() * 1000),
+                    )
+
+                    db.add(chat_human_msg)
+                    db.add(chat_ai_msg)
+                    await db.commit()
+
+                    # 存储进redis
+                    async with redis_client.pipeline() as pipe:
+                        pipe.rpush(f"chat_history:{session_id}", json.dumps(human_message.__dict__, ensure_ascii=False),
+                                   json.dumps(last_message.__dict__, ensure_ascii=False))
+                        pipe.expire(f"chat_history:{session_id}", 24 * 60 * 60)
+                        await pipe.execute()
+            except Exception as e:
+                raise Exception(f"存储聊天记录异常, {str(e)}")
+
+            yield StreamResponse(
+                event="done",
+                data=DoneEvent(
+                    session_id=session_id,
+                    end_at=int(time.time() * 1000),
+                    usage={
+                        "input_tokens": last_message.usage_metadata["input_tokens"],
+                        "output_tokens": last_message.usage_metadata["output_tokens"],
+                        "total_tokens": last_message.usage_metadata["total_tokens"],
+                    }
+                )
+            )
+
+
 
 
         except Exception as e:

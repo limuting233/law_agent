@@ -7,8 +7,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from schemas.request.chat import ChatRequest, Message
 
 # ChatService().chat_stream(ChatRequest(chat_id="123", message=Message(content="你好")))
-h = AIMessage(content="你好,我是法律智能体")
-print(h.__dict__)
+h = AIMessage(content="你好！我是一个法律智能体，能够帮助你查询和解答法律相关的问题。请问有什么法律问题需要帮助吗？")
+print(h.model_dump_json())
 # a ={'content': '你好', 'additional_kwargs': {}, 'response_metadata': {}, 'type': 'human', 'name': None, 'id': None}
 # h1=HumanMessage(**a)
 # print(h1.__dict__)

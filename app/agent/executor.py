@@ -1,5 +1,6 @@
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 # from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from loguru import logger
@@ -50,6 +51,7 @@ class LawAgentBuilder:
             model=ChatOpenAI(model=self.model_name, base_url=settings.OPENAI_API_BASE,
                              api_key=settings.OPENAI_API_KEY),
             # tools=[search_case],
+            # checkpointer=InMemorySaver(),
             checkpointer=checkpointer,
             system_prompt="你是一个法律智能体，你的任务是根据用户的问题，查询法律案例。",
             state_schema=LawAgentState,
