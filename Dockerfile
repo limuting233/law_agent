@@ -1,40 +1,35 @@
-# ---------------------------------------
-# 第一阶段：构建依赖导出层
-# ---------------------------------------
-# 修改点 1：使用 python:3.12-slim
-FROM python:3.12-slim as requirements-stage
-
-WORKDIR /tmp
-
-RUN pip install poetry
-
-COPY pyproject.toml poetry.lock* /tmp/
-
-# 导出 requirements.txt
-RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
-
-# ---------------------------------------
-# 第二阶段：构建最终运行镜像
-# ---------------------------------------
-# 修改点 2：使用 python:3.12-slim
 FROM python:3.12-slim
 
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# 可选：Python 3.12 有时对某些旧包的编译依赖要求较高
-# 如果你在安装 psycopg2 (非 binary 版) 时报错，取消下面这行的注释
-# RUN apt-get update && apt-get install -y libpq-dev gcc && rm -rf /var/lib/apt/lists/*
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
 
-COPY --from=requirements-stage /tmp/requirements.txt /app/requirements.txt
+# Add Poetry to PATH
+ENV PATH="/root/.local/bin:$PATH"
 
-# 安装依赖
-RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
+# Configure Poetry to not create a virtual environment
+RUN poetry config virtualenvs.create false
 
-COPY . /app
+# Copy dependency files
+COPY pyproject.toml poetry.lock ./
 
+# Install dependencies
+RUN poetry install --no-root --no-interaction --no-ansi
+
+# Copy application code
+COPY . .
+# Add app directory to PYTHONPATH to fix imports like 'from agent import ...'
+ENV PYTHONPATH=/app/app
+# Expose port
 EXPOSE 8000
 
+# Run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+

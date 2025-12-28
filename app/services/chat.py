@@ -176,17 +176,6 @@ class ChatService:
                     #             )
                     #             db.add(chat_message)
                     # await db.commit()
-
-
-
-
-
-
-
-
-
-
-
             except Exception as e:
                 # logger.exception(f"law_agent流式调用异常, {str(e)}")
                 raise Exception(f"law_agent流式调用异常, {str(e)}")
@@ -238,10 +227,6 @@ class ChatService:
                     }
                 )
             )
-
-
-
-
         except Exception as e:
             logger.error(f"LawAgent运行异常: {str(e)}")
 

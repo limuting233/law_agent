@@ -6,6 +6,10 @@
 
 __pycache__/
 
-Dockerfile
+test/
 
+
+
+Dockerfile
+.dockerignore
 docker-compose.yml

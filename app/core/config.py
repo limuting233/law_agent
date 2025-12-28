@@ -11,7 +11,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Law RAG Agent"
+    PROJECT_NAME: str = "Law Agent"
+    # MODE: str = "dev"  # dev, test, prod
     # API_V1_STR: str = "/api/v1"
 
     OPENAI_API_BASE: str

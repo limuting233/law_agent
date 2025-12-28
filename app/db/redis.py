@@ -1,6 +1,7 @@
 from loguru import logger
+
 # from redis import from_url
-from redis.asyncio import Redis,from_url
+from redis.asyncio import Redis, from_url
 
 from core.config import settings
 
@@ -31,7 +32,6 @@ class RedisManager:
                 socket_connect_timeout=settings.REDIS_SOCKET_CONNECT_TIMEOUT,
                 max_connections=settings.REDIS_POOL_MAX_CONNECTIONS,
                 health_check_interval=settings.REDIS_POOL_HEALTH_CHECK,
-
             )
             # 测试连接
             await cls._client.ping()
